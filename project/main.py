@@ -1,6 +1,10 @@
 #!env/bin/python
+from btree import Tree
+
+
 def main():
-    print('Hello, world!')
+    tree = Tree()
+    print(tree)
 
 if __name__ == '__main__':
     main()

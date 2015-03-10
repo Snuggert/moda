@@ -23,7 +23,7 @@ class Tree(MutableMapping):
         return root
 
     def __getitem__(self, key):
-        pass
+        return self.root._select(key)
 
     def __setitem__(self, key, value):
         """
@@ -96,6 +96,18 @@ class Leaf(Mapping, BaseNode):
 
     def __len__(self):
         pass
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class LazyNode(object):
