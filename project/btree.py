@@ -31,7 +31,7 @@ class Tree(MutableMapping):
         split, creates a new root node with pointers to this node and the new
         node that resulted from splitting.
         """
-        pass
+        self.root._insert(key, value)
 
     def __delitem__(self, key):
         pass
@@ -63,7 +63,8 @@ class BaseNode(object):
         Inserts the key and value into the bucket. If the bucket has become too
         large, the node will be split into two nodes.
         """
-        pass
+        if len(self.bucket) < self.tree.max_size or key in self.bucket:
+            self.bucket[key] = value
 
 
 class Node(BaseNode):
@@ -75,7 +76,14 @@ class Node(BaseNode):
         """
         Selects the bucket the key should belong to.
         """
-        return self.bucket[key]
+        return self._next_node(key)._select(key)
+
+    def _next_node(self, key):
+        for k in self.bucket.keys():
+            if key < k:
+                return self.bucket[k]
+
+        return self.rest
 
     def _insert(self, key, value):
         """
@@ -84,7 +92,7 @@ class Node(BaseNode):
         the node has been split, it inserts the key of the newly created node
         into the bucket of this node.
         """
-        pass
+        self._next_node(key)._insert(key)
 
 
 class Leaf(Mapping, BaseNode):
@@ -92,13 +100,13 @@ class Leaf(Mapping, BaseNode):
         return self[key]
 
     def __getitem__(self, key):
-        pass
+        return self.bucket[key]
 
     def __iter__(self):
-        pass
+        return self.bucket.__iter__()
 
     def __len__(self):
-        pass
+        return len(self.bucket)
 
 
 
