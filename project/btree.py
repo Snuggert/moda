@@ -75,7 +75,7 @@ class Node(BaseNode):
         """
         Selects the bucket the key should belong to.
         """
-        pass
+        return self.bucket[key]
 
     def _insert(self, key, value):
         """
@@ -88,6 +88,9 @@ class Node(BaseNode):
 
 
 class Leaf(Mapping, BaseNode):
+    def _select(self, key):
+        return self[key]
+
     def __getitem__(self, key):
         pass
 
