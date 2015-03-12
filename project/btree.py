@@ -57,6 +57,22 @@ class Tree(MutableMapping):
     def __len__(self):
         pass
 
+    def to_json(self):
+        return {'root': self.root, 'max_size': self.max_size}
+
+    def __repr__(self):
+        return 'Tree(' + repr(self.root) + ', ' + repr(self.max_size) + ')'
+
+    def commit(self, filename='db.db'):
+        with open(filename, 'bw') as db:
+            db.write(encode(self))
+
+    @staticmethod
+    def from_file(filename='db.db'):
+        with open(filename, 'br') as db:
+            return decode(db.read())
+
+
 
 class BaseNode(object):
     def __init__(self, tree, bucket=None):
@@ -65,6 +81,9 @@ class BaseNode(object):
             self.bucket = SortedDict(bucket)
         else:
             self.bucket = SortedDict()
+
+        self.changed = False
+
 
     def _split(self):
         """
@@ -90,6 +109,7 @@ class BaseNode(object):
         Inserts the key and value into the bucket. If the bucket has become too
         large, the node will be split into two nodes.
         """
+        self.changed = True
         self.bucket[key] = value
         if len(self.bucket) > self.tree.max_size:
             return self, self._split()
@@ -117,13 +137,13 @@ class BaseNode(object):
             parent.rest = self
         del parent.bucket[left_key]
 
-    def __repr__(self):
-        return json.dumps(self)
+    def _commit(self):
+        encode(json_dumps(self))
 
 
 class Node(BaseNode):
-    def __init__(self, *args, **kwargs):
-        self.rest = None
+    def __init__(self, *args, rest=None, **kwargs):
+        self.rest = rest
         super(Node, self).__init__(*args, **kwargs)
 
     def __getitem__(self, key):
@@ -146,6 +166,7 @@ class Node(BaseNode):
         the node has been split, it inserts the key of the newly created node
         into the bucket of this node.
         """
+        self.changed = True
         old_node, new_node = self._next_node(key)._insert(key, value)
         if new_node is not None:
             return super()._insert(old_node._smallest_key(), new_node)
@@ -238,6 +259,10 @@ class Node(BaseNode):
     def to_json(self):
         return OrderedDict((('bucket', self.bucket), ('rest', self.rest)))
 
+    def __repr__(self):
+        return 'Node(' + str(dict(self.bucket)) + ', ' + repr(self.rest) + ')'
+
+
 
 
 class Leaf(Mapping, BaseNode):
@@ -266,6 +291,9 @@ class Leaf(Mapping, BaseNode):
 
     def to_json(self):
         return self.bucket
+
+    def __repr__(self):
+        return 'Leaf(' + str(dict(self.bucket)) + ')'
 
 
 
@@ -336,3 +364,5 @@ class LazyNode(object):
             return super().__setattr__(name, value)
 
         setattr(self.node, name, value)
+
+from encode import encode, decode  # No circular imports
