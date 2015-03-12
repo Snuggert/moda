@@ -1,5 +1,18 @@
-from collections import Mapping, MutableMapping
+from collections import Mapping, MutableMapping, OrderedDict
 from sortedcontainers import SortedDict
+import json
+
+"""Module that monkey-patches json module when it's imported so
+JSONEncoder.default() automatically checks for a special "to_json()"
+method and uses it to encode the object if found.
+"""
+from json import JSONEncoder
+
+def _default(self, obj):
+    return getattr(obj.__class__, "to_json", _default.default)(obj)
+
+_default.default = JSONEncoder().default # save unmodified default
+JSONEncoder.default = _default # replacement
 
 
 class Tree(MutableMapping):
@@ -15,15 +28,15 @@ class Tree(MutableMapping):
     def _create_node(*args, **kwargs):
         return Node(*args, **kwargs)
 
-    def _create_root(self, lhs, rhs):
+    def _create_root(self, left, right):
         root = self._create_node(tree=self)
-        root.rest = lhs
-        root.bucket[min(rhs.bucket)] = rhs
+        root.bucket[right._smallest_key()] = left
+        root.rest = right
 
-        return root
+        self.root = root
 
     def __getitem__(self, key):
-        return self.root._select(key)
+        return self.root[key]
 
     def __setitem__(self, key, value):
         """
@@ -34,7 +47,9 @@ class Tree(MutableMapping):
         self.root._insert(key, value)
 
     def __delitem__(self, key):
-        pass
+        if self.root._delete(key) and isinstance(self.root, Node) and \
+                len(self.root) == 1:
+            self.root = self.root.rest
 
     def __iter__(self):
         pass
@@ -44,27 +59,66 @@ class Tree(MutableMapping):
 
 
 class BaseNode(object):
-    def __init__(self, tree):
+    def __init__(self, tree, bucket=None):
         self.tree = tree
-        self.bucket = SortedDict()
+        if bucket is not None:
+            self.bucket = SortedDict(bucket)
+        else:
+            self.bucket = SortedDict()
 
     def _split(self):
         """
         Creates a new node of the same type and splits the contents of the
         bucket into two parts of an equal size. The lower keys are being stored
-        in the bucket of the current node. The higher keys are being stored in
-        the bucket of the new node. Afterwards, the new node is being returned.
+        in the bucket of the new node. The higher keys are being stored in
+        the bucket of the old node. Afterwards, the new node is being returned.
         """
-        other = self.__class__()
-        return
+        new_bucket = self.bucket.items()[:len(self.bucket)//2]
+        self.bucket = SortedDict(self.bucket.items()[len(self.bucket)//2:])
+
+        new_node = self.__class__(tree=self.tree, bucket=new_bucket)
+        if hasattr(new_node, 'rest'):
+            new_node.rest = new_node.bucket.popitem()[1]
+
+        if self is self.tree.root:
+            self.tree._create_root(new_node, self)
+
+        return new_node
 
     def _insert(self, key, value):
         """
         Inserts the key and value into the bucket. If the bucket has become too
         large, the node will be split into two nodes.
         """
-        if len(self.bucket) < self.tree.max_size or key in self.bucket:
-            self.bucket[key] = value
+        self.bucket[key] = value
+        if len(self.bucket) > self.tree.max_size:
+            return self, self._split()
+        return self, None
+
+    def _take_first(self):
+        key = self.bucket.keys()[0]
+        return key, self.bucket.pop(key)
+
+    def _set_first(self, key, value):
+        self.bucket[key] = value
+
+    def _merge_right(self, right, parent):
+        """Merge the buckets of the two children and place them at of the right
+        node in the parent"""
+        self.bucket.update(right.bucket)
+
+        left_key = right._smallest_key()
+        try:
+            right_index = parent.bucket.values().index(right)
+            right_key = parent.bucket.keys()[right_index]
+            parent.bucket[right_key] = self
+
+        except ValueError:
+            parent.rest = self
+        del parent.bucket[left_key]
+
+    def __repr__(self):
+        return json.dumps(self)
 
 
 class Node(BaseNode):
@@ -72,11 +126,11 @@ class Node(BaseNode):
         self.rest = None
         super(Node, self).__init__(*args, **kwargs)
 
-    def _select(self, key):
+    def __getitem__(self, key):
         """
         Selects the bucket the key should belong to.
         """
-        return self._next_node(key)._select(key)
+        return self._next_node(key)[key]
 
     def _next_node(self, key):
         for k in self.bucket.keys():
@@ -92,21 +146,126 @@ class Node(BaseNode):
         the node has been split, it inserts the key of the newly created node
         into the bucket of this node.
         """
-        self._next_node(key)._insert(key)
+        old_node, new_node = self._next_node(key)._insert(key, value)
+        if new_node is not None:
+            return super()._insert(old_node._smallest_key(), new_node)
+        return self, None
+
+    def _delete(self, key):
+        next_node = self._next_node(key)
+        if next_node._delete(key) and \
+                len(next_node) < self.tree.max_size/2:
+            vals = self.bucket.values()
+
+            try:
+                index = vals.index(next_node)
+                if index != 0:
+                    l_neighbour = vals[index - 1]
+                else:
+                    l_neighbour = None
+
+                try:
+                    r_neighbour = vals[index + 1]
+                except IndexError:
+                    r_neighbour = self.rest
+
+            except ValueError:
+                l_neighbour = vals[-1]
+                r_neighbour = None
+
+
+            if r_neighbour is not None and \
+                    (len(r_neighbour) - 1) > self.tree.max_size/2:
+                key, val = r_neighbour._take_first()
+                next_node._set_last(key, val)
+                left = next_node
+                right = r_neighbour
+
+            elif l_neighbour is not None and \
+                    (len(l_neighbour) - 1) > self.tree.max_size/2:
+                key, val = l_neighbour._take_last()
+
+                if key is None:
+                    key = next_node._smallest_key()
+
+                next_node._set_first(key, val)
+
+                left = l_neighbour
+                right = next_node
+            else:
+                if l_neighbour:
+                    l_neighbour._merge_right(next_node, self)
+                elif r_neighbour:
+                    next_node._merge_right(r_neighbour, self)
+                else:
+                    print('This is a problemo, it should never happen')
+
+                return True
+
+            # Change index of the left of the two nodes
+            left_key = self.bucket.keys()[vals.index(left)]
+            self.bucket.pop(left_key)
+            self.bucket[right._smallest_key()] = next_node
+
+            return False
+
+    def _merge_right(self, right, parent):
+        self.bucket[right._smallest_key()] = self.rest
+        self.rest = right.rest
+
+        super()._merge_right(right, parent)
+
+    def _take_last(self):
+        last = self.rest
+        start = self.rest = self.bucket.popitem()[1]
+        return None, last
+
+    def _set_last(self, key, value):
+        self.bucket[value._smallest_key()] = self.rest
+        self.rest = value
+
+    def _smallest_key(self):
+        if self.bucket:
+            item = self.bucket.values()[0]
+        else:
+            item = self.rest
+
+        return item._smallest_key()
+
+    def __len__(self):
+        return len(self.bucket) + 1
+
+    def to_json(self):
+        return OrderedDict((('bucket', self.bucket), ('rest', self.rest)))
+
 
 
 class Leaf(Mapping, BaseNode):
-    def _select(self, key):
-        return self[key]
+    def _smallest_key(self):
+        return self.bucket.keys()[0]
+
+    def _take_last(self):
+        return self.bucket.popitem()
+
+    def _set_last(self, key, value):
+        self.bucket[key] = value
 
     def __getitem__(self, key):
         return self.bucket[key]
+
+    def _delete(self, key):
+        del self.bucket[key]
+        return True
+
 
     def __iter__(self):
         return self.bucket.__iter__()
 
     def __len__(self):
         return len(self.bucket)
+
+    def to_json(self):
+        return self.bucket
 
 
 
