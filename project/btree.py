@@ -1,6 +1,5 @@
 from collections import Mapping, MutableMapping, OrderedDict
 from sortedcontainers import SortedDict
-import json
 
 """Module that monkey-patches json module when it's imported so
 JSONEncoder.default() automatically checks for a special "to_json()"
@@ -8,25 +7,28 @@ method and uses it to encode the object if found.
 """
 from json import JSONEncoder
 
-def _default(self, obj):
-    return getattr(obj.__class__, "to_json", _default.default)(obj)
 
-_default.default = JSONEncoder().default # save unmodified default
-JSONEncoder.default = _default # replacement
+def _default(self, obj):
+    return getattr(obj, "to_json", _default.default)(obj)
+
+
+_default.default = JSONEncoder().default  # save unmodified default
+JSONEncoder.default = _default  # replacement
 
 
 class Tree(MutableMapping):
-    def __init__(self, max_size=1024):
+    def __init__(self, max_size=1024, filename='db.db'):
         self.root = self._create_leaf(tree=self)
         self.max_size = max_size
+        self.filename = filename
 
     @staticmethod
     def _create_leaf(*args, **kwargs):
-        return Leaf(*args, **kwargs)
+        return LazyNode(node=Leaf(*args, **kwargs))
 
     @staticmethod
     def _create_node(*args, **kwargs):
-        return Node(*args, **kwargs)
+        return LazyNode(node=Node(*args, **kwargs))
 
     def _create_root(self, left, right):
         root = self._create_node(tree=self)
@@ -57,21 +59,22 @@ class Tree(MutableMapping):
     def __len__(self):
         pass
 
-    def to_json(self):
+    def to_json(self, extra=None):
         return {'root': self.root, 'max_size': self.max_size}
 
     def __repr__(self):
         return 'Tree(' + repr(self.root) + ', ' + repr(self.max_size) + ')'
 
-    def commit(self, filename='db.db'):
-        with open(filename, 'bw') as db:
+    def commit(self):
+        with open(self.filename, 'bw+') as db:
+            self.root._commit(db)
             db.write(encode(self))
 
     @staticmethod
     def from_file(filename='db.db'):
         with open(filename, 'br') as db:
-            return decode(db.read())
-
+            tree = Tree(filename=filename)
+            return decode(db.read(), tree)
 
 
 class BaseNode(object):
@@ -82,8 +85,8 @@ class BaseNode(object):
         else:
             self.bucket = SortedDict()
 
+        self.lazy = None
         self.changed = False
-
 
     def _split(self):
         """
@@ -95,12 +98,17 @@ class BaseNode(object):
         new_bucket = self.bucket.items()[:len(self.bucket)//2]
         self.bucket = SortedDict(self.bucket.items()[len(self.bucket)//2:])
 
-        new_node = self.__class__(tree=self.tree, bucket=new_bucket)
+        new_node = LazyNode(node=self.__class__(tree=self.tree,
+                                                bucket=new_bucket))
+
         if hasattr(new_node, 'rest'):
             new_node.rest = new_node.bucket.popitem()[1]
 
-        if self is self.tree.root:
-            self.tree._create_root(new_node, self)
+        new_node.changed = True
+
+        if self is self.tree.root.node:
+            print('yeaaah a root')
+            self.tree._create_root(new_node, self.lazy)
 
         return new_node
 
@@ -137,8 +145,10 @@ class BaseNode(object):
             parent.rest = self
         del parent.bucket[left_key]
 
-    def _commit(self):
-        encode(json_dumps(self))
+    def _commit(self, db):
+        pos = db.tell()
+        db.write(encode(self))
+        return pos
 
 
 class Node(BaseNode):
@@ -194,7 +204,6 @@ class Node(BaseNode):
                 l_neighbour = vals[-1]
                 r_neighbour = None
 
-
             if r_neighbour is not None and \
                     (len(r_neighbour) - 1) > self.tree.max_size/2:
                 key, val = r_neighbour._take_first()
@@ -238,7 +247,7 @@ class Node(BaseNode):
 
     def _take_last(self):
         last = self.rest
-        start = self.rest = self.bucket.popitem()[1]
+        self.rest = self.bucket.popitem()[1]
         return None, last
 
     def _set_last(self, key, value):
@@ -256,13 +265,18 @@ class Node(BaseNode):
     def __len__(self):
         return len(self.bucket) + 1
 
-    def to_json(self):
+    def to_json(self, extra=None):
         return OrderedDict((('bucket', self.bucket), ('rest', self.rest)))
 
     def __repr__(self):
         return 'Node(' + str(dict(self.bucket)) + ', ' + repr(self.rest) + ')'
 
+    def _commit(self, db):
+        self.rest._commit(db)
+        for n in self.bucket.values():
+            n._commit(db)
 
+        super()._commit(db)
 
 
 class Leaf(Mapping, BaseNode):
@@ -282,42 +296,31 @@ class Leaf(Mapping, BaseNode):
         del self.bucket[key]
         return True
 
-
     def __iter__(self):
         return self.bucket.__iter__()
 
     def __len__(self):
         return len(self.bucket)
 
-    def to_json(self):
+    def to_json(self, extra=None):
         return self.bucket
 
     def __repr__(self):
         return 'Leaf(' + str(dict(self.bucket)) + ')'
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 class LazyNode(object):
-    init = False
+    _init = False
 
-    def __init__(self, offset=None, node=None):
+    def __init__(self, offset=None, node=None, tree=None):
         """
         Sets up a proxy wrapper for a node at a certain disk offset.
         """
-        self.offset = offset
         self.node = node
+        self.offset = offset
         self._init = True
+        if self.node is not None:
+            self.node.lazy = self
 
     @property
     def changed(self):
@@ -329,28 +332,31 @@ class LazyNode(object):
 
         return self.node.changed
 
-    def _commit(self):
+    def _commit(self, db):
         """
         Commit the changes if the node has been changed.
         """
         if not self.changed:
             return
 
-        self.node._commit()
+        self.offset = self.node._commit(db)
         self.changed = False
 
     def _load(self):
         """
         Load the node from disk.
         """
-        pass
+        if self.offset is None:
+            raise Exception
+        with open(self.tree.filename, 'rb') as db:
+            return decode(db.seek(self.offset), self.tree)
 
     def __getattr__(self, name):
         """
         Loads the node if it hasn't been loaded yet, and dispatches the request
         to the node.
         """
-        if not self.node:
+        if self.node is None:
             self.node = self._load()
 
         return getattr(self.node, name)
@@ -360,9 +366,15 @@ class LazyNode(object):
         Dispatches the request to the node, if the proxy wrapper has been fully
         set up.
         """
-        if not self._init or hasattr(self, name):
+        if not self._init or \
+                ((name in self.__dict__ or name in LazyNode.__dict__)
+                 and name != 'changed'):
             return super().__setattr__(name, value)
 
         setattr(self.node, name, value)
+
+    def __repr__(self):
+        return 'LazyNode(' + repr(self.offset) + ', ' + repr(self.node) + ')'
+
 
 from encode import encode, decode  # No circular imports
