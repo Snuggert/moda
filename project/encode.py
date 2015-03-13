@@ -1,6 +1,7 @@
-from msgpack import packb, Unpacker
+from msgpack import packb, unpackb, Unpacker
 from snappy import compress, decompress  # noqa
 from btree import Tree, Node, Leaf, LazyNode
+from checksum import add_integrity, check_integrity
 
 
 def encode_btree(obj):
@@ -13,7 +14,7 @@ def encode_btree(obj):
 
 
 def encode(data):
-    return packb(data, default=encode_btree)
+    return packb(compress(add_integrity(packb(data, default=encode_btree))))
 
 
 def decode(data, tree):
@@ -33,8 +34,9 @@ def decode(data, tree):
                 return tree
         return obj
 
-    unpacker = Unpacker(data, object_hook=decode_btree)
-    return(next(unpacker))
+    data = decompress(next(Unpacker(data)))
+
+    return unpackb(check_integrity(data), object_hook=decode_btree)
 
 
 def bucket_to_lazynodes(bucket, tree):
