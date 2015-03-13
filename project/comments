@@ -1,0 +1,24 @@
+This textfile contains some written comments about our work on the Modern Databases project.
+
+Week1:
+We started of full positivity on the amazing journey of programming a database in python based on a b+ tree.
+We looked at a document in the course material section on the blackboard.
+Only after implementing all code from the text we found that there are actually snippets on the blackboard as well. Ah well, minor setback/time wasted.
+From here we spent quite a bit of time understanding the skeleton code, and what a first good step to take was.
+We looked up the description of a b+ tree on wikipedia and came to understand that the description in the document provided was close to equal to the description we found on wikipedia.
+So we started of with the code to find a key into a tree, which was succesful in the end.
+But how can you find something that isn't there so we continued on the insert.
+
+During coding we found out the amount of work on the skeleton-code hadn't been a lot,
+resulting in code that was erronous and sometimes not usefull.
+E.G. 
+-The skeleton-LazyNode class checks if node is empty was just wrong.
+ if self.node != if self.node is None
+-Also the hasattr in __setitem__ is utterly redundant.
+And whilst coding continued onward(slowely) our understanding of the project description dwindled.
+The description is vague and oftentimes ambiguous which resulted in us sending an email questioning
+the work still ahead for us. This mail was sent after hours of mostly hard work.
+
+In the mail we got back we were belittled for not working hard enough for (third-year) students.
+In the end this week was quite frustrating.
+Jelte and Abe logging out for week 1.

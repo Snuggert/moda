@@ -1,0 +1,153 @@
+\documentclass{article}
+\usepackage{graphicx}
+
+\usepackage[utf8]{inputenc}
+\usepackage[a4paper]{geometry}
+\usepackage{etoolbox}
+\usepackage{amsmath}
+\usepackage{stmaryrd}
+\usepackage{tikz}
+
+
+\makeatletter
+\patchcmd{\maketitle}{\@fnsymbol}{\@alph}{}{}  % Footnote numbers from symbols to small letters
+\makeatother
+
+\title{Assignments 6.1\\ \large{Modern Databases UvA-2015}}
+\author{Abe Wiersma\\Student number: 10433120}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section*{Differences between a B Tree and a B+ Tree}
+Two major differences between B Trees and B+ Trees can be found:
+\begin{itemize}
+    \item B Trees store data in their internal nodes, where B+ Trees store
+    data only in their leaves(the outer most nodes.)
+    \item The leaves of a B+ tree are also a linked list making iteration over
+    the keys and data of a B+ tree a lot easier. In a B Tree you would always
+    have to do a depth first search to get all keys and data.
+\end{itemize}
+
+\section*{Operations in our B+ tree}
+\begin{itemize}
+    \item Searching for a key.
+    \begin{enumerate}
+        \item Start with root node.
+        \item Loop over keys of current node until a key lower than the key
+        being searched for is found.
+        \item If None is found raise a KeyError, else go one level down into
+        the key found.
+        \item If current node is a leaf try to find the key directly in the
+        bucket, raise KeyError when the key is not found whilst in a leaf.
+        If the current node is a regular node Start with step 2 again.
+    \end{enumerate}
+    \item Inserting a key, value pair.
+    \begin{enumerate}
+        \item Using part of the above algorithm find the correct leaf, set the
+        key in the bucket of the leave found to value.
+        \item If the leaf has grown beyond $max\_size$ split up the leaf into two
+        leaves, with equally sized buckets.
+        \item This change moves up the tree checking whether every parent root
+        also needs to be split up.
+    \end{enumerate}
+    \item Deleting a key and it's data.
+    \begin{enumerate}
+        \item Using the search algorithm find the the key and remove it.
+        \item If a leaf has shrunk below half of $max\_size$ find it's
+        neighbors.
+        \item If there is a neighbor with whom the current node can merge,
+        merge! When a merge occurs it can happen that this merge moves up the
+        tree. In this process a node merges it's buckets together with it's
+        neighbor.
+        \item If step 3 failed check if the neighbors have at least
+        $(max\_size/2) + 1$. If so snatch away one of their key value pairs.
+
+    \end{enumerate}
+\end{itemize}
+
+\section*{Bulk loading into a B+ tree}
+Bulk loading happens when a lot of documents have to be added into an empty
+tree. You could start with an empty tree and use the standard insert, but this
+is slow in comparison with an optimized bulk-load. Instead one can pre-sort the
+documents and then construct a maximally utilized B+ tree from these pre-sorted
+documents.
+
+\section*{Inserting keys 32 and 42}
+\begin{tikzpicture}[node distance=1cm, scale=1, line width=0.1em,
+    rectangle split, rectangle split horizontal, rectangle split parts=3]
+\node[name=B1, draw] {
+    $2$
+    \nodepart{second} $5$
+    \nodepart{third} $6$
+};
+\node[name=B2, draw, right=of B1] {
+    $21$
+    \nodepart{second} $27$
+    \nodepart{third} {\ \ }
+};
+\node[name=B3, draw, right=of B2] {
+    $37$
+    \nodepart{second} $39$
+    \nodepart{third} $44$
+};
+\node[name=B4, draw, right=of B3] {
+    $49$
+    \nodepart{second} $53$
+    \nodepart{third} $59$
+};
+\path (B2) -- node (BC) {} (B3); 
+\node[name=A1, draw, above=of BC] {
+    $21$
+    \nodepart{second} $37$
+    \nodepart{third} $49$
+};
+\path[draw, ->] (A1.south west) -- (B1.north);
+\path[draw, ->] (A1.one split south) -- (B2.north);
+\path[draw, ->] (A1.two split south) -- (B3.north);
+\path[draw, ->] (A1.south east) -- (B4.north);
+\end{tikzpicture}
+
+Insert the 32.
+\begin{tikzpicture}[node distance=1cm, scale=1, line width=0.1em,
+    rectangle split, rectangle split horizontal, rectangle split parts=3]
+\node[name=B1, draw] {
+    $2$
+    \nodepart{second} $5$
+    \nodepart{third} $6$
+};
+\node[name=B2, draw, right=of B1] {
+    $21$
+    \nodepart{second} $27$
+    \nodepart{third} $32$
+};
+\node[name=B3, draw, right=of B2] {
+    $37$
+    \nodepart{second} $39$
+    \nodepart{third} $44$
+};
+\node[name=B4, draw, right=of B3] {
+    $49$
+    \nodepart{second} $53$
+    \nodepart{third} $59$
+};
+\path (B2) -- node (BC) {} (B3); 
+\node[name=A1, draw, above=of BC] {
+    $21$
+    \nodepart{second} $37$
+    \nodepart{third} $49$
+};
+\path[draw, ->] (A1.south west) -- (B1.north);
+\path[draw, ->] (A1.one split south) -- (B2.north);
+\path[draw, ->] (A1.two split south) -- (B3.north);
+\path[draw, ->] (A1.south east) -- (B4.north);
+\end{tikzpicture}
+
+Compiled niet, HIER MOET DIE VAN 42 nog BIJ!
+
+\section*{Removing keys 49, 59 and 44}
+Hier het remove gedeelte.
+\end{document}
