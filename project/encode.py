@@ -22,10 +22,9 @@ def decode(data, tree):
             cls_name = obj[b'__class__'].decode()
             data = obj[b'data']
             if cls_name == 'Leaf':
-                obj = Leaf(tree, bucket=data)
+                obj = Leaf(tree, bucket=bucket_to_lazynodes(data, tree))
             elif cls_name == 'Node':
-                bucket = {k: LazyNode(offset=v, tree=tree) for k, v in
-                          data[b'bucket'].items()}
+                bucket = bucket_to_lazynodes(data[b'bucket'], tree)
                 obj = Node(tree, bucket=bucket,
                            rest=LazyNode(offset=data[b'rest'], tree=tree))
             else:
@@ -36,3 +35,7 @@ def decode(data, tree):
 
     unpacker = Unpacker(data, object_hook=decode_btree)
     return(next(unpacker))
+
+
+def bucket_to_lazynodes(bucket, tree):
+    return {k: LazyNode(offset=v, tree=tree) for k, v in bucket.items()}
