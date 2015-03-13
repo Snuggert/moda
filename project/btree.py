@@ -7,6 +7,8 @@ method and uses it to encode the object if found.
 """
 from json import JSONEncoder
 
+import os
+
 
 def _default(self, obj):
     return getattr(obj, "to_json", _default.default)(obj)
@@ -18,20 +20,20 @@ JSONEncoder.default = _default  # replacement
 
 class Tree(MutableMapping):
     def __init__(self, max_size=1024, filename='db.db'):
-        self.root = self._create_leaf(tree=self)
+        self.root = self._create_leaf()
         self.max_size = max_size
         self.filename = filename
 
-    @staticmethod
-    def _create_leaf(*args, **kwargs):
-        return LazyNode(node=Leaf(*args, **kwargs))
+    def _create_leaf(self, *args, **kwargs):
+        return LazyNode(tree=self, node=Leaf(*args, tree=self, new=True,
+                                             **kwargs))
 
-    @staticmethod
-    def _create_node(*args, **kwargs):
-        return LazyNode(node=Node(*args, **kwargs))
+    def _create_node(self, *args, **kwargs):
+        return LazyNode(tree=self, node=Node(*args, tree=self, new=True,
+                                             **kwargs))
 
     def _create_root(self, left, right):
-        root = self._create_node(tree=self)
+        root = self._create_node()
         root.bucket[right._smallest_key()] = left
         root.rest = right
 
@@ -66,19 +68,43 @@ class Tree(MutableMapping):
         return 'Tree(' + repr(self.root) + ', ' + repr(self.max_size) + ')'
 
     def commit(self):
-        with open(self.filename, 'bw+') as db:
+        with open(self.filename, 'ba') as db:
+            print(db.tell())
             self.root._commit(db)
+            pos = db.tell()
+            print(pos)
+
             db.write(encode(self))
+            footer = {'type': 'footer', 'tree': pos}
+            pos = db.tell()
+            db.write(encode(footer))
+            db.seek(pos)
 
     @staticmethod
     def from_file(filename='db.db'):
         with open(filename, 'br') as db:
+            tree_pos = 0
             tree = Tree(filename=filename)
-            return decode(db.read(), tree)
+
+            size = os.path.getsize(filename)
+
+            for i in range(size):
+                db.seek(-i, 2)  # Search at the position of this file
+                try:
+                    footer = decode(db, tree)
+                    if b'type' in footer and footer[b'type'] == b'footer':
+                        tree_pos = footer[b'tree']
+                        break
+                except Exception:
+                    pass
+
+            db.seek(tree_pos)
+            decoded_tree = decode(db, tree)
+            return decoded_tree
 
 
 class BaseNode(object):
-    def __init__(self, tree, bucket=None):
+    def __init__(self, tree, bucket=None, new=False):
         self.tree = tree
         if bucket is not None:
             self.bucket = SortedDict(bucket)
@@ -86,7 +112,7 @@ class BaseNode(object):
             self.bucket = SortedDict()
 
         self.lazy = None
-        self.changed = False
+        self.changed = new
 
     def _split(self):
         """
@@ -99,7 +125,8 @@ class BaseNode(object):
         self.bucket = SortedDict(self.bucket.items()[len(self.bucket)//2:])
 
         new_node = LazyNode(node=self.__class__(tree=self.tree,
-                                                bucket=new_bucket))
+                                                bucket=new_bucket),
+                            tree=self.tree)
 
         if hasattr(new_node, 'rest'):
             new_node.rest = new_node.bucket.popitem()[1]
@@ -107,7 +134,6 @@ class BaseNode(object):
         new_node.changed = True
 
         if self is self.tree.root.node:
-            print('yeaaah a root')
             self.tree._create_root(new_node, self.lazy)
 
         return new_node
@@ -272,11 +298,12 @@ class Node(BaseNode):
         return 'Node(' + str(dict(self.bucket)) + ', ' + repr(self.rest) + ')'
 
     def _commit(self, db):
-        self.rest._commit(db)
         for n in self.bucket.values():
             n._commit(db)
 
-        super()._commit(db)
+        self.rest._commit(db)
+
+        return super()._commit(db)
 
 
 class Leaf(Mapping, BaseNode):
@@ -318,9 +345,10 @@ class LazyNode(object):
         """
         self.node = node
         self.offset = offset
-        self._init = True
+        self.tree = tree
         if self.node is not None:
             self.node.lazy = self
+        self._init = True
 
     @property
     def changed(self):
@@ -341,6 +369,7 @@ class LazyNode(object):
 
         self.offset = self.node._commit(db)
         self.changed = False
+        return self.offset
 
     def _load(self):
         """
@@ -348,8 +377,12 @@ class LazyNode(object):
         """
         if self.offset is None:
             raise Exception
-        with open(self.tree.filename, 'rb') as db:
-            return decode(db.seek(self.offset), self.tree)
+        filename = self.tree.filename
+
+        with open(filename, 'rb') as db:
+            db.seek(self.offset)
+            return decode(db, self.tree)
+        return 'ShITS GOING DOWN'
 
     def __getattr__(self, name):
         """
@@ -358,6 +391,7 @@ class LazyNode(object):
         """
         if self.node is None:
             self.node = self._load()
+            self.node.lazy = self
 
         return getattr(self.node, name)
 
