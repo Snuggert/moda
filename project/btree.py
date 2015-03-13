@@ -114,6 +114,9 @@ class BaseNode(object):
         self.lazy = None
         self.changed = new
 
+        if isinstance(self, Leaf):
+            self.next = None
+
     def _split(self):
         """
         Creates a new node of the same type and splits the contents of the
@@ -121,8 +124,8 @@ class BaseNode(object):
         in the bucket of the new node. The higher keys are being stored in
         the bucket of the old node. Afterwards, the new node is being returned.
         """
-        new_bucket = self.bucket.items()[:len(self.bucket)//2]
-        self.bucket = SortedDict(self.bucket.items()[len(self.bucket)//2:])
+        new_bucket = self.bucket.items()[:len(self.bucket) // 2]
+        self.bucket = SortedDict(self.bucket.items()[len(self.bucket) // 2:])
 
         new_node = LazyNode(node=self.__class__(tree=self.tree,
                                                 bucket=new_bucket),
@@ -130,6 +133,8 @@ class BaseNode(object):
 
         if hasattr(new_node, 'rest'):
             new_node.rest = new_node.bucket.popitem()[1]
+        if hasattr(self, 'next'):
+            self.next = new_node
 
         new_node.changed = True
 
@@ -211,7 +216,7 @@ class Node(BaseNode):
     def _delete(self, key):
         next_node = self._next_node(key)
         if next_node._delete(key) and \
-                len(next_node) < self.tree.max_size/2:
+                len(next_node) < self.tree.max_size / 2:
             vals = self.bucket.values()
 
             try:
@@ -231,14 +236,14 @@ class Node(BaseNode):
                 r_neighbour = None
 
             if r_neighbour is not None and \
-                    (len(r_neighbour) - 1) > self.tree.max_size/2:
+                    (len(r_neighbour) - 1) > self.tree.max_size / 2:
                 key, val = r_neighbour._take_first()
                 next_node._set_last(key, val)
                 left = next_node
                 right = r_neighbour
 
             elif l_neighbour is not None and \
-                    (len(l_neighbour) - 1) > self.tree.max_size/2:
+                    (len(l_neighbour) - 1) > self.tree.max_size / 2:
                 key, val = l_neighbour._take_last()
 
                 if key is None:
@@ -250,8 +255,12 @@ class Node(BaseNode):
                 right = next_node
             else:
                 if l_neighbour:
+                    if(hasattr(r_neighbour, 'next')):
+                        pass
                     l_neighbour._merge_right(next_node, self)
                 elif r_neighbour:
+                    if(hasattr(r_neighbour, 'next')):
+                        pass
                     next_node._merge_right(r_neighbour, self)
                 else:
                     print('This is a problemo, it should never happen')
