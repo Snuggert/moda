@@ -8,6 +8,7 @@ method and uses it to encode the object if found.
 from json import JSONEncoder
 
 import os
+import shutil
 
 
 def _default(self, obj):
@@ -77,6 +78,18 @@ class Tree(MutableMapping):
             pos = db.tell()
             db.write(encode(footer))
             db.seek(pos)
+
+    def compact(self):
+        self.root._make_dirty()
+
+        real_filename = self.filename
+        self.filename = '.temp_' + self.filename
+
+        self.commit()
+
+        shutil.copyfile(self.filename, real_filename)
+        os.remove(self.filename)
+        self.filename = real_filename
 
     @staticmethod
     def from_file(filename='db.db'):
@@ -314,6 +327,13 @@ class Node(BaseNode):
 
         return super()._commit(db)
 
+    def _make_dirty(self):
+        self.changed = True
+
+        for n in self.bucket.values():
+            n._make_dirty()
+        self.rest._make_dirty()
+
 
 class Leaf(Mapping, BaseNode):
     def _smallest_key(self):
@@ -344,6 +364,12 @@ class Leaf(Mapping, BaseNode):
 
     def __repr__(self):
         return 'Leaf(' + str(dict(self.bucket)) + ')'
+
+    def _make_dirty(self):
+        self.changed = True
+
+        for n in self.bucket.values():
+            n.offset = False
 
 
 class LazyNode(object):

@@ -1,6 +1,7 @@
 #!env/bin/python
 from btree import Tree
 import json
+from os.path import getsize
 
 
 def fancy_print(thingy, *args, **kwargs):
@@ -21,7 +22,11 @@ def main():
         new_tree = Tree.from_file()
         new_tree[2] = 20
         del new_tree[0]
+
         fancy_print(new_tree)
+        print(getsize(new_tree.filename))
+        new_tree.compact()
+        print(getsize(new_tree.filename))
         print()
         print()
 
