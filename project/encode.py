@@ -14,6 +14,8 @@ def encode_btree(obj):
 
 
 def encode(data):
+    # Pack the data add the integrity compress it then to make it as small as
+    # possible and then pack it again, so msgpack knows where the package ends
     return packb(compress(add_integrity(packb(data, default=encode_btree))))
 
 
@@ -34,6 +36,7 @@ def decode(data, tree):
                 return tree
         return obj
 
+    # Decompress the first data group that can be found in the data stream
     data = decompress(next(Unpacker(data)))
 
     return unpackb(check_integrity(data), object_hook=decode_btree)

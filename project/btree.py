@@ -75,9 +75,8 @@ class Tree(MutableMapping):
 
             db.write(encode(self))
             footer = {'type': 'footer', 'tree': pos}
-            pos = db.tell()
+
             db.write(encode(footer))
-            db.seek(pos)
 
     def compact(self):
         self.root._make_dirty()
@@ -87,6 +86,7 @@ class Tree(MutableMapping):
 
         self.commit()
 
+        # Copy new database over the old one and remove the temp file
         shutil.copyfile(self.filename, real_filename)
         os.remove(self.filename)
         self.filename = real_filename
@@ -99,6 +99,9 @@ class Tree(MutableMapping):
 
             size = os.path.getsize(filename)
 
+            # Try finding the footer by trying to decode a footer and starting
+            # one byte further away from the end of the file if that doesn't
+            # work
             for i in range(size):
                 db.seek(-i, 2)  # Search at the position of this file
                 try:
@@ -422,7 +425,9 @@ class LazyNode(object):
         Load the node from disk.
         """
         if self.offset is None:
+            # Loading a node without an offset should never happen
             raise Exception
+
         filename = self.tree.filename
 
         with open(filename, 'rb') as db:
@@ -436,10 +441,6 @@ class LazyNode(object):
     def set_lazy(self):
         if isinstance(self.node, BaseNode):
             self.node.lazy = self
-
-    def __getattribute__(self, name):
-        # print('trying to get that shit ', name)
-        return super().__getattribute__(name)
 
     def __getattr__(self, name):
         """
