@@ -43,4 +43,5 @@ def decode(data, tree):
 
 
 def bucket_to_lazynodes(bucket, tree):
-    return {k: LazyNode(offset=v, tree=tree) for k, v in bucket.items()}
+    return {k.decode(): LazyNode(offset=v, tree=tree) for k, v in
+            bucket.items()}

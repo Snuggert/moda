@@ -41,7 +41,7 @@ class Tree(MutableMapping):
         self.root = root
 
     def __getitem__(self, key):
-        return self.root[key]
+        return self.root[str(key)]
 
     def __setitem__(self, key, value):
         """
@@ -49,10 +49,10 @@ class Tree(MutableMapping):
         split, creates a new root node with pointers to this node and the new
         node that resulted from splitting.
         """
-        self.root._insert(key, value)
+        self.root._insert(str(key), value)
 
     def __delitem__(self, key):
-        if self.root._delete(key) and isinstance(self.root, Node) and \
+        if self.root._delete(str(key)) and isinstance(self.root, Node) and \
                 len(self.root) == 1:
             self.root = self.root.rest
 
