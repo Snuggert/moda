@@ -40,10 +40,12 @@ def decode(data, tree):
     data = decompress(next(Unpacker(data)))
 
     data = unpackb(check_integrity(data), object_hook=decode_btree)
+    if isinstance(data, bytes):
+        return data.decode()
     return data
 
 
 def bucket_to_lazynodes(bucket, tree):
-    bucket =  {k.decode(): LazyNode(offset=v, tree=tree) for k, v in
-            bucket.items()}
+    bucket = {k.decode(): LazyNode(offset=v, tree=tree) for k, v in
+              bucket.items()}
     return bucket
