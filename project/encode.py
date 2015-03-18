@@ -6,10 +6,10 @@ from checksum import add_integrity, check_integrity
 
 def encode_btree(obj):
     if isinstance(obj, (Tree, Node, Leaf)):
-        return {'__class__': obj.__class__.__name__,
-                'data': obj.to_json()}
+        obj = {'__class__': obj.__class__.__name__,
+               'data': obj.serialize()}
     elif isinstance(obj, LazyNode):
-        return obj.offset
+        obj = obj.offset
     return obj
 
 
@@ -39,9 +39,11 @@ def decode(data, tree):
     # Decompress the first data group that can be found in the data stream
     data = decompress(next(Unpacker(data)))
 
-    return unpackb(check_integrity(data), object_hook=decode_btree)
+    data = unpackb(check_integrity(data), object_hook=decode_btree)
+    return data
 
 
 def bucket_to_lazynodes(bucket, tree):
-    return {k.decode(): LazyNode(offset=v, tree=tree) for k, v in
+    bucket =  {k.decode(): LazyNode(offset=v, tree=tree) for k, v in
             bucket.items()}
+    return bucket

@@ -52,7 +52,7 @@ class Tree(MutableMapping):
         self.root._insert(str(key), value)
 
     def __delitem__(self, key):
-        if self.root._delete(str(key)) and isinstance(self.root, Node) and \
+        if self.root._delete(str(key)) and isinstance(self.root.node, Node) and \
                 len(self.root) == 1:
             self.root = self.root.rest
 
@@ -61,6 +61,9 @@ class Tree(MutableMapping):
 
     def __len__(self):
         pass
+
+    def serialize(self):
+        return {'root': self.root.serialize(), 'max_size': self.max_size}
 
     def to_json(self, extra=None):
         return {'root': self.root, 'max_size': self.max_size}
@@ -139,15 +142,13 @@ class BaseNode(object):
         self.bucket = SortedDict(self.bucket.items()[len(self.bucket) // 2:])
 
         new_node = LazyNode(node=self.__class__(tree=self.tree,
-                                                bucket=new_bucket),
+                                                bucket=new_bucket, new=True),
                             tree=self.tree)
 
         if hasattr(new_node, 'rest'):
             new_node.rest = new_node.bucket.popitem()[1]
         if hasattr(self, 'next'):
             self.next = new_node
-
-        new_node.changed = True
 
         if self is self.tree.root.node:
             self.tree._create_root(new_node, self.lazy)
@@ -180,15 +181,19 @@ class BaseNode(object):
         """Merge the buckets of the two children and place them at of the right
         node in the parent"""
         self.bucket.update(right.bucket)
+        self.changed = True
+        right.changed = True
+        parent.changed = True
 
-        left_key = right._smallest_key()
+        left_index = parent.bucket.values().index(self.lazy)
+        left_key = parent.bucket.keys()[left_index]
         try:
-            right_index = parent.bucket.values().index(right)
+            right_index = parent.bucket.values().index(right.lazy)
             right_key = parent.bucket.keys()[right_index]
-            parent.bucket[right_key] = self
+            parent.bucket[right_key] = self.lazy
 
         except ValueError:
-            parent.rest = self
+            parent.rest = self.lazy
         del parent.bucket[left_key]
 
     def _commit(self, db):
@@ -274,12 +279,8 @@ class Node(BaseNode):
                 right = next_node
             else:
                 if l_neighbour:
-                    if(hasattr(r_neighbour, 'next')):
-                        pass
                     l_neighbour._merge_right(next_node, self)
                 elif r_neighbour:
-                    if(hasattr(r_neighbour, 'next')):
-                        pass
                     next_node._merge_right(r_neighbour, self)
                 else:
                     print('This is a problemo, it should never happen')
@@ -319,8 +320,14 @@ class Node(BaseNode):
     def __len__(self):
         return len(self.bucket) + 1
 
+    def serialize(self):
+        return SortedDict({
+            'bucket': {k: v.serialize() for k, v in self.bucket.items()},
+            'rest': self.rest.serialize()
+        })
+
     def to_json(self, extra=None):
-        return OrderedDict((('bucket', self.bucket), ('rest', self.rest)))
+        return SortedDict((('bucket', self.bucket), ('rest', self.rest)))
 
     def __repr__(self):
         return 'Node(' + str(dict(self.bucket)) + ', ' + repr(self.rest) + ')'
@@ -349,7 +356,7 @@ class Leaf(Mapping, BaseNode):
         self.bucket[key] = value
 
     def __getitem__(self, key):
-        return self.bucket[key]
+        return self.bucket[key][key]
 
     def _delete(self, key):
         self.changed = True
@@ -362,6 +369,9 @@ class Leaf(Mapping, BaseNode):
     def __len__(self):
         return len(self.bucket)
 
+    def serialize(self):
+        return SortedDict({k: v.serialize() for k, v in self.bucket.items()})
+
     def to_json(self, extra=None):
         return self.bucket
 
@@ -372,7 +382,7 @@ class Leaf(Mapping, BaseNode):
         self.changed = True
 
         for n in self.bucket.values():
-            n.offset = False
+            n.offset = None
 
 
 class LazyNode(object):
@@ -388,6 +398,9 @@ class LazyNode(object):
         self.set_lazy()
         self._init = True
 
+    def is_document(self):
+        return not isinstance(self.node, BaseNode)
+
     @property
     def changed(self):
         """
@@ -397,12 +410,22 @@ class LazyNode(object):
             return False
 
         # New documents won't have an offset yet
-        if not isinstance(self.node, BaseNode):
+        if self.is_document():
             if self.offset is None:
                 return True
+
             return False
 
+
         return self.node.changed
+
+    @changed.setter
+    def changed(self, val):
+        if not self.is_document():
+            if val is True:
+                self.offset = None
+        else:
+            self.node.changed = val
 
     def _commit(self, db):
         """
@@ -411,7 +434,7 @@ class LazyNode(object):
         if not self.changed:
             return self.offset
 
-        if isinstance(self.node, BaseNode):
+        if not self.is_document():
             self.offset = self.node._commit(db)
             self.changed = False
         else:
@@ -430,16 +453,20 @@ class LazyNode(object):
 
         filename = self.tree.filename
 
+        ex = None
         with open(filename, 'rb') as db:
             try:
                 db.seek(self.offset)
                 self.node = decode(db, self.tree)
                 self.set_lazy()
             except Exception as e:
-                print(type(e), e)
+                ex = e
+
+        if ex is not None:
+            raise ex
 
     def set_lazy(self):
-        if isinstance(self.node, BaseNode):
+        if not self.is_document():
             self.node.lazy = self
 
     def __getattr__(self, name):
@@ -459,8 +486,7 @@ class LazyNode(object):
         """
 
         if not self._init or \
-                ((name in self.__dict__ or name in LazyNode.__dict__)
-                 and name != 'changed'):
+                name in self.__dict__ or name in LazyNode.__dict__:
             return super().__setattr__(name, value)
 
         setattr(self.node, name, value)
@@ -474,6 +500,9 @@ class LazyNode(object):
 
         return len(self.node)
 
+    def serialize(self):
+        return self.offset
+
     def to_json(self, obj=None):
         if self.node is None:
             self._load()
@@ -481,6 +510,14 @@ class LazyNode(object):
         if hasattr(self.node, 'to_json'):
             return self.node.to_json()
         return self.node
+
+    def __getitem__(self, key):
+        if self.node is None:
+            self._load()
+
+        if self.is_document():
+            return self.node
+        return self.node[key]
 
 
 from encode import encode, decode  # No circular imports
