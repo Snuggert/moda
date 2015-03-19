@@ -14,8 +14,6 @@ def get(_id):
 @bp.route('/<_id>/', methods=['PUT'])
 def put(_id):
     db = Tree.from_file()
-    print(request.json)
-    print(request.data)
     if request.json is not None:
         data = request.json
     elif len(request.data):
@@ -29,3 +27,16 @@ def put(_id):
     db[_id] = data
     db.commit()
     return jsonify(id=_id, data=data)
+
+
+@bp.route('/<_id>/', methods=['DELETE'])
+def delete(_id):
+    db = Tree.from_file()
+    try:
+        del db[_id]
+    except KeyError:
+        return jsonify(error='The key was not found'), 500
+
+    db.commit()
+
+    return jsonify(succes='deleted')

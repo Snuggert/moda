@@ -57,10 +57,10 @@ class Tree(MutableMapping):
             self.root = self.root.rest
 
     def __iter__(self):
-        pass
+        yield from self.root
 
     def __len__(self):
-        pass
+        return len(self.root)
 
     def serialize(self):
         return {'root': self.root.serialize(), 'max_size': self.max_size}
@@ -344,6 +344,11 @@ class Node(BaseNode):
             n._make_dirty()
         self.rest._make_dirty()
 
+    def __iter__(self):
+        for child in self.bucket.values():
+            yield from child
+        yield from self.rest
+
 
 class Leaf(Mapping, BaseNode):
     def _smallest_key(self):
@@ -364,7 +369,8 @@ class Leaf(Mapping, BaseNode):
         return True
 
     def __iter__(self):
-        return self.bucket.__iter__()
+        for k in self.bucket.keys():
+            yield k, self[k]
 
     def __len__(self):
         return len(self.bucket)
@@ -519,5 +525,9 @@ class LazyNode(object):
             return self.node
         return self.node[key]
 
+    def __iter__(self):
+        if self.node is None:
+            self._load()
+        yield from self.node
 
 from encode import encode, decode  # No circular imports
