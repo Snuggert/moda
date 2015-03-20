@@ -1,4 +1,4 @@
-from collections import Mapping, MutableMapping, OrderedDict
+from collections import Mapping, MutableMapping
 from sortedcontainers import SortedDict
 
 """Module that monkey-patches json module when it's imported so
@@ -109,8 +109,8 @@ class Tree(MutableMapping):
                 db.seek(-i, 2)  # Search at the position of this file
                 try:
                     footer = decode(db, tree)
-                    if b'type' in footer and footer[b'type'] == b'footer':
-                        tree_pos = footer[b'tree']
+                    if 'type' in footer and footer['type'] == 'footer':
+                        tree_pos = footer['tree']
                         break
                 except Exception:
                     pass

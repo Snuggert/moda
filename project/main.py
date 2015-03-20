@@ -21,6 +21,7 @@ def main():
         tree.commit()
         print('IMPORRRTTTTT')
         new_tree = Tree.from_file()
+        print(new_tree)
         print('IMUPPORRTTAANTT', new_tree)
         fancy_print(new_tree)
         new_tree[2] = 20
