@@ -40,7 +40,13 @@ def compact():
 def map():
     script = Script()
     tree = Tree.from_file()
+    temp_tree = Tree(filename='map.db')
+    temp_tree.compact()
+
     script.add_string(request.get_data())
-    data = script.invoke('mapper', tree.__iter__())
-    data = script.invoke('reducer', data)
+    data = []
+    for k, v in tree:
+        temp_tree[k] = script.invoke('mapper', k, v)
+    data = script.invoke('reducer', temp_tree.__iter__())
+
     return jsonify(result=data)
