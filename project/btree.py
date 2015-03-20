@@ -388,7 +388,7 @@ class Leaf(Mapping, BaseNode):
         self.changed = True
 
         for n in self.bucket.values():
-            n.offset = None
+            n.changed = True
 
 
 class LazyNode(object):
@@ -422,12 +422,14 @@ class LazyNode(object):
 
             return False
 
-
         return self.node.changed
 
     @changed.setter
     def changed(self, val):
-        if not self.is_document():
+        if self.node is None:
+            self._load()
+
+        if self.is_document():
             if val is True:
                 self.offset = None
         else:
@@ -528,6 +530,7 @@ class LazyNode(object):
     def __iter__(self):
         if self.node is None:
             self._load()
+
         yield from self.node
 
 from encode import encode, decode  # No circular imports

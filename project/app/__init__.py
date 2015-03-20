@@ -1,4 +1,5 @@
-from flask import Flask
+from flask import Flask, jsonify
+from btree import Tree
 
 # Startup stuff
 app = Flask(__name__)
@@ -26,3 +27,9 @@ from app import single, multiple
 
 app.register_blueprint(single.bp)
 app.register_blueprint(multiple.bp)
+
+
+@app.route('/compact/', methods=['GET'])
+def compact():
+    Tree.from_file().compact()
+    return jsonify(success='compacted')
