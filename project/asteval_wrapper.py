@@ -26,6 +26,12 @@ class Script(object):
         """
         self.interpreter.symtable = symtable
 
+    def add_string(self, string):
+        """
+        Adds and loads code from a string.
+        """
+        self.interpreter(string)
+
     def add_file(self, path):
         """
         Adds and loads code from a script file.

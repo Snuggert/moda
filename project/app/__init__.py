@@ -1,5 +1,6 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from btree import Tree
+from asteval_wrapper import Script
 
 # Startup stuff
 app = Flask(__name__)
@@ -33,3 +34,13 @@ app.register_blueprint(multiple.bp)
 def compact():
     Tree.from_file().compact()
     return jsonify(success='compacted')
+
+
+@app.route('/map/', methods=['POST'])
+def map():
+    script = Script()
+    tree = Tree.from_file()
+    script.add_string(request.get_data())
+    data = script.invoke('mapper', tree.__iter__())
+    data = script.invoke('reducer', data)
+    return jsonify(result=data)
